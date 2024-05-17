@@ -192,7 +192,7 @@ int getCursorPosition(int *row, int *col)
 	uint32_t i = 0;
 
 	// Read answer from stdin
-	while(i < sizeof(response) - 1)
+	for(i = 0; i < sizeof(response) - 1; i++)
 	{
 		if(read(STDIN_FILENO, &response[i], 1) != 1)
 		{
@@ -202,7 +202,6 @@ int getCursorPosition(int *row, int *col)
 		{
 			break;
 		}
-		i++;
 	}
 
 	response[i] = '\0';
