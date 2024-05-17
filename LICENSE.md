@@ -1,6 +1,6 @@
 Copyright (c) 2016, Salvatore Sanfilippo <antirez at gmail dot com>
 
-Modifications (C) 2024, Aryan Mediratta
+Modifications (c) 2024, Aryan Mediratta
 
 All rights reserved.
 
