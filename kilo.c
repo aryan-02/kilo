@@ -1,4 +1,8 @@
 /*** INCLUDES ***/
+#define _DEFAULT_SOURCE
+#define _GNU_SOURCE
+#define _BSD_SOURCE
+
 #include <stdio.h>
 #include <termios.h>
 #include <unistd.h>
@@ -6,6 +10,7 @@
 #include <ctype.h>
 #include <errno.h>
 #include <sys/ioctl.h>
+#include <sys/types.h>
 #include <stdint.h>
 #include <string.h>
 
@@ -31,11 +36,22 @@ enum editorKey
 };
 
 /*** DATA ***/
+
+typedef struct erow // Editor row
+{
+	int size;
+	char *chars;
+}
+erow;
+
+
 struct editorConfig
 {
 	int cx, cy; // x, y position of the cursor.
 	int screenrows;
 	int screencols;
+	int numrows;
+	erow *row;
 	struct termios orig_termios;
 };
 
@@ -248,6 +264,45 @@ int getWindowSize(int *rows, int *cols)
 	}
 }
 
+/*** ROW OPERATIONS ***/
+void editorAppendRow(char *line, int len)
+{
+	E.row = realloc(E.row, sizeof(erow) * (E.numrows + 1));
+
+	int idx = E.numrows;
+	E.row[idx].size = len;
+	E.row[idx].chars = malloc(len + 1);
+	memcpy(E.row[idx].chars, line, len);
+	E.row[idx].chars[len] = '\0';
+	
+	E.numrows++;
+}
+
+/*** FILE I/O ***/
+void editorOpen(char *filename)
+{
+	FILE *fp = fopen(filename, "r");
+	if(!fp)
+	{
+		die("fopen");
+	}
+	char *line = NULL;
+	size_t linecap = 0;
+	ssize_t linelen;
+
+	while((linelen = getline(&line, &linecap, fp)) != -1)
+	{
+		while(linelen > 0 && (line[linelen - 1] == '\n' || line[linelen - 1] == '\r'))
+		{
+			linelen--;
+		}
+		editorAppendRow(line, linelen);
+	}
+	free(line);
+	fclose(fp);
+}
+
+
 /*** APPEND BUFFER ***/
 struct abuf
 {
@@ -282,31 +337,44 @@ void editorDrawRows(struct abuf *ab)
 	int y;
 	for(y = 0; y < E.screenrows; y++)
 	{
-		if(y == E.screenrows / 3)
+		if(y >= E.numrows)
 		{
-			char welcome[80];
-			int welcomelen = snprintf(welcome, sizeof(welcome), "Kilo Editor -- Version %s", KILO_VERSION);
-			if(welcomelen > E.screencols)
+			if(E.numrows == 0 && y == E.screenrows / 3)
 			{
-				welcomelen = E.screencols;
+				char welcome[80];
+				int welcomelen = snprintf(welcome, sizeof(welcome), "Kilo Editor -- Version %s", KILO_VERSION);
+				if(welcomelen > E.screencols)
+				{
+					welcomelen = E.screencols;
+				}
+				// Center align welcome message
+				int padding = (E.screencols - welcomelen) / 2;
+				if(padding)
+				{
+					abAppend(ab, "~", 1);
+					padding--;
+				}
+				while(padding--)
+				{
+					abAppend(ab, " ", 1);
+				}
+				abAppend(ab, welcome, welcomelen);
 			}
-			// Center align welcome message
-			int padding = (E.screencols - welcomelen) / 2;
-			if(padding)
+			else
 			{
 				abAppend(ab, "~", 1);
-				padding--;
 			}
-			while(padding--)
-			{
-				abAppend(ab, " ", 1);
-			}
-			abAppend(ab, welcome, welcomelen);
 		}
 		else
 		{
-			abAppend(ab, "~", 1);
+			int len = E.row[y].size;
+			if(len > E.screencols)
+			{
+				len = E.screencols;
+			}
+			abAppend(ab, E.row[y].chars, len);
 		}
+			
 
 		abAppend(ab, "\x1b[K", 3); // Clear line to the right of the cursor.
 		
@@ -412,16 +480,23 @@ void initEditor(void)
 {
 	E.cx = 0;
 	E.cy = 0;
+	E.numrows = 0;
+	E.row = NULL;
+
 	if(getWindowSize(&(E.screenrows), &(E.screencols)) == -1)
 	{
 		die("getWindowSize");
 	}
 }
 
-int main(void)
+int main(int argc, char *argv[])
 {
 	enableRawMode();
 	initEditor();
+	if(argc >= 2)
+	{
+		editorOpen(argv[1]);
+	}
 
 	while(1)
 	{
